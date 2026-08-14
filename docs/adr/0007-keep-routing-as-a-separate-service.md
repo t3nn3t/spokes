@@ -1,0 +1,3 @@
+# Keep BRouter as a separately deployable routing service
+
+The private Next.js web interface will deploy to Vercel, while BRouter remains an independently deployable container so its Java runtime and England graph do not constrain the web application. Development begins locally with Hertfordshire data; production will try a separate Vercel container Function and move the same container to a small always-on host if cold starts exceed roughly ten seconds or memory is unreliable. Browsers will reach routing only through the Next.js backend, and Spokes will store no server-side route history or analytics.

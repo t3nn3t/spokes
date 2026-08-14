@@ -1,6 +1,6 @@
 # Spokes
 
-Spokes is an England-only route planner for a mountain-bike Rider who strongly prefers passage away from motor traffic. Ticket 01 establishes one local Hertfordshire tracer bullet: Welwyn Garden City to Hatfield through the Spokes Route Planning API and a separately running BRouter service.
+Spokes is an England-only route planner for a mountain-bike Rider who strongly prefers passage away from motor traffic. The current slice lets the Rider select exact start and destination points on a MapLibre map and request one provisional Strong Avoidance Route Plan through the Spokes Route Planning API and a separately running BRouter service.
 
 ## Run the tracer bullet
 
@@ -25,7 +25,7 @@ Start the web application in another:
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The page requests the fixed first benchmark journey from `/api/routes`; only the Next.js server knows the BRouter address. `BROUTER_URL` defaults to `http://127.0.0.1:17777` and can be changed using the server-only variable documented in `.env.example`.
+Open [http://localhost:3000](http://localhost:3000), click a start and destination on the map, then choose **Plan route**. The requested markers stay canonical and visible while the returned route exposes its snapped endpoints and connector distances. Only the Next.js server knows the BRouter address. `BROUTER_URL` defaults to `http://127.0.0.1:17777`; the public raster map source is independently configurable with `NEXT_PUBLIC_MAP_TILE_URL`. Both are documented in `.env.example`.
 
 ## Repeatable checks
 

@@ -1,0 +1,14 @@
+{
+  "id": "hertfordshire-2026-08-13",
+  "source": {
+    "name": "hertfordshire-260813.osm.pbf",
+    "url": "https://download.geofabrik.de/europe/united-kingdom/england/hertfordshire-260813.osm.pbf",
+    "bytes": 38243868,
+    "sha256": "e9b4f557095a459bc1e4548f3bc630f67bef5c9d95165c411a6cebf6867e03fc"
+  },
+  "builder": {
+    "brouterVersion": "1.7.10",
+    "brouterCommit": "4d2639af77ea5ed9c30d3e400764eb6f9e8522da"
+  },
+  "output": "W5_N50.rd5"
+}

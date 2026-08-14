@@ -1,0 +1,22 @@
+services:
+  brouter-data:
+    build:
+      context: .
+      dockerfile: routing/data-builder/Dockerfile
+      args:
+        BROUTER_COMMIT: 4d2639af77ea5ed9c30d3e400764eb6f9e8522da
+    image: spokes-brouter-data:1.7.10
+    volumes:
+      - ${SPOKES_ROUTING_SOURCE_DIR:-./routing/data/source}:/source:ro
+      - ${SPOKES_ROUTING_DATA_DIR:-./routing/data/segments4}:/segments4
+
+  brouter:
+    build:
+      context: https://github.com/abrensch/brouter.git#4d2639af77ea5ed9c30d3e400764eb6f9e8522da
+    image: spokes-brouter:1.7.10
+    ports:
+      - "127.0.0.1:17777:17777"
+    restart: unless-stopped
+    volumes:
+      - ${SPOKES_ROUTING_DATA_DIR:-./routing/data/segments4}:/segments4:ro
+      - ./routing/profiles/spokes-mtb.brf:/profiles2/spokes-mtb.brf:ro

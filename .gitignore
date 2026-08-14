@@ -1,1 +1,13 @@
 .DS_Store
+node_modules/
+.next/
+coverage/
+*.tsbuildinfo
+.env*
+!.env.example
+
+# Downloaded routing sources and generated graph tiles are not ordinary source files.
+routing/data/segments4/*
+!routing/data/segments4/.gitkeep
+routing/data/source/*
+!routing/data/source/.gitkeep

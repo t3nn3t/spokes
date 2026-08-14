@@ -9,6 +9,7 @@ import {
 import { isInEngland } from "@/lib/england";
 import {
   EndpointSnapExceededError,
+  NoEligibleRouteError,
   NoRouteError,
   RouteTooLongError,
   requestProvisionalRoute,
@@ -123,6 +124,14 @@ export async function POST(request: Request) {
         404,
         "NO_ROUTE",
         "No route was found between the selected points.",
+      );
+    }
+
+    if (error instanceof NoEligibleRouteError) {
+      return errorResponse(
+        404,
+        "NO_ROUTE",
+        "No eligible route remains after applying passage exclusions.",
       );
     }
 

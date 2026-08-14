@@ -182,8 +182,17 @@ export function RoutePlanner() {
               <dl className="route-details">
                 <div><dt>Start connector</dt><dd>{formatDistance(route.connectorDistanceMeters.start)}</dd></div>
                 <div><dt>Destination connector</dt><dd>{formatDistance(route.connectorDistanceMeters.destination)}</dd></div>
+                <div>
+                  <dt><span className="passage-swatch unverified-swatch" />Unverified Passage</dt>
+                  <dd>{formatDistance(route.unverifiedPassageDistanceMeters)}</dd>
+                </div>
               </dl>
               <p className="connector-note">Dashed connectors show any gap between your markers and the routed graph.</p>
+              {route.unverifiedPassageDistanceMeters > 0 && (
+                <p className="unverified-note">
+                  Unverified Passage is physically connected, but check bicycle access before travelling.
+                </p>
+              )}
             </div>
           )}
         </div>

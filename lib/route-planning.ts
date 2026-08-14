@@ -30,6 +30,17 @@ export type LineString = {
   coordinates: [longitude: number, latitude: number][];
 };
 
+export type PassageClassification =
+  | "eligible"
+  | "unverified-passage"
+  | "explicit-exclusion";
+
+export type AuditedRouteSegment = {
+  classification: PassageClassification;
+  distanceMeters: number;
+  geometry: LineString;
+};
+
 export type ProvisionalRoute = {
   role: "provisional";
   requestedCoordinates: EndpointCoordinates;
@@ -42,6 +53,8 @@ export type ProvisionalRoute = {
   geometry: LineString;
   totalDistanceMeters: number;
   approximateDurationSeconds: number;
+  segments: AuditedRouteSegment[];
+  unverifiedPassageDistanceMeters: number;
 };
 
 export type RoutePlanningResponse = {

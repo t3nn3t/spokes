@@ -1,10 +1,15 @@
 import "server-only";
 
 import type {
+  AuditedRouteSegment,
   LineString,
   ProvisionalRoute,
   RoutePlanningRequest,
 } from "@/lib/route-planning";
+import {
+  approximatePassageDurationSeconds,
+  auditPassage,
+} from "@/lib/server/passage-audit";
 
 const DEFAULT_BROUTER_URL = "http://127.0.0.1:17777";
 const BROUTER_PROFILE = "spokes-mtb";
@@ -19,6 +24,7 @@ type BrouterFeatureCollection = {
     properties: {
       "track-length": string | number;
       "total-time": string | number;
+      messages: unknown;
     };
     geometry: {
       type: "LineString";
@@ -30,6 +36,7 @@ type BrouterFeatureCollection = {
 export class RoutingServiceUnavailableError extends Error {}
 export class EndpointSnapExceededError extends Error {}
 export class NoRouteError extends Error {}
+export class NoEligibleRouteError extends Error {}
 export class RouteTooLongError extends Error {}
 
 function distanceBetween(first: RoutePlanningRequest["start"], second: RoutePlanningRequest["start"]) {
@@ -84,6 +91,122 @@ function asBrouterRoute(value: unknown): BrouterFeatureCollection | null {
   }
 
   return collection as BrouterFeatureCollection;
+}
+
+function asFiniteNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function parseTags(value: unknown) {
+  if (typeof value !== "string") return null;
+  const tags = new Map<string, string>();
+
+  for (const tag of value.split(/\s+/).filter(Boolean)) {
+    const separator = tag.indexOf("=");
+    if (separator <= 0) return null;
+    tags.set(tag.slice(0, separator), tag.slice(separator + 1));
+  }
+
+  return tags;
+}
+
+function auditBrouterSegments(
+  messages: unknown,
+  geometry: LineString,
+  totalDurationSeconds: number,
+): {
+  segments: AuditedRouteSegment[];
+  approximateDurationSeconds: number;
+  unverifiedPassageDistanceMeters: number;
+} | null {
+  if (!Array.isArray(messages) || messages.length < 2) return null;
+  const header = messages[0];
+  if (!Array.isArray(header)) return null;
+
+  const longitudeIndex = header.indexOf("Longitude");
+  const latitudeIndex = header.indexOf("Latitude");
+  const distanceIndex = header.indexOf("Distance");
+  const wayTagsIndex = header.indexOf("WayTags");
+  const nodeTagsIndex = header.indexOf("NodeTags");
+  const timeIndex = header.indexOf("Time");
+  if (
+    longitudeIndex < 0 ||
+    latitudeIndex < 0 ||
+    distanceIndex < 0 ||
+    wayTagsIndex < 0 ||
+    nodeTagsIndex < 0 ||
+    timeIndex < 0
+  ) {
+    return null;
+  }
+
+  const segments: AuditedRouteSegment[] = [];
+  let geometryStartIndex = 0;
+  let previousTime = 0;
+  let auditedDuration = 0;
+  let unverifiedDistance = 0;
+  let finalSegmentUsesWalkBike = false;
+
+  for (const row of messages.slice(1)) {
+    if (!Array.isArray(row)) return null;
+    const longitude = asFiniteNumber(row[longitudeIndex]);
+    const latitude = asFiniteNumber(row[latitudeIndex]);
+    const distance = asFiniteNumber(row[distanceIndex]);
+    const cumulativeTime = asFiniteNumber(row[timeIndex]);
+    const wayTags = parseTags(row[wayTagsIndex]);
+    const nodeTags = parseTags(row[nodeTagsIndex]);
+    if (
+      longitude === null ||
+      latitude === null ||
+      distance === null ||
+      distance <= 0 ||
+      cumulativeTime === null ||
+      cumulativeTime < previousTime ||
+      !wayTags ||
+      !nodeTags
+    ) {
+      return null;
+    }
+
+    const geometryEndIndex = geometry.coordinates.findIndex(
+      ([candidateLongitude, candidateLatitude], index) =>
+        index > geometryStartIndex &&
+        Math.round(candidateLongitude * 1_000_000) === longitude &&
+        Math.round(candidateLatitude * 1_000_000) === latitude,
+    );
+    if (geometryEndIndex < 0) return null;
+
+    const { classification, usesWalkBike } = auditPassage(wayTags, nodeTags);
+    segments.push({
+      classification,
+      distanceMeters: distance,
+      geometry: {
+        type: "LineString",
+        coordinates: geometry.coordinates.slice(geometryStartIndex, geometryEndIndex + 1),
+      },
+    });
+    if (classification === "unverified-passage") {
+      unverifiedDistance += distance;
+    }
+    auditedDuration += approximatePassageDurationSeconds(
+      distance,
+      cumulativeTime - previousTime,
+      usesWalkBike,
+    );
+    finalSegmentUsesWalkBike = usesWalkBike;
+    previousTime = cumulativeTime;
+    geometryStartIndex = geometryEndIndex;
+  }
+
+  if (geometryStartIndex !== geometry.coordinates.length - 1) return null;
+  if (!finalSegmentUsesWalkBike) auditedDuration += totalDurationSeconds - previousTime;
+
+  return {
+    segments,
+    approximateDurationSeconds: Math.round(auditedDuration),
+    unverifiedPassageDistanceMeters: unverifiedDistance,
+  };
 }
 
 function routeUrl(request: RoutePlanningRequest) {
@@ -155,6 +278,17 @@ export async function requestProvisionalRoute(
       position[1],
     ]),
   };
+  const audit = auditBrouterSegments(
+    feature.properties.messages,
+    geometry,
+    Number(feature.properties["total-time"]),
+  );
+  if (!audit) {
+    throw new RoutingServiceUnavailableError();
+  }
+  if (audit.segments.some((segment) => segment.classification === "explicit-exclusion")) {
+    throw new NoEligibleRouteError();
+  }
   const snappedCoordinates = {
     start: {
       longitude: geometry.coordinates[0][0],
@@ -192,6 +326,8 @@ export async function requestProvisionalRoute(
     },
     geometry,
     totalDistanceMeters: Number(feature.properties["track-length"]),
-    approximateDurationSeconds: Number(feature.properties["total-time"]),
+    approximateDurationSeconds: audit.approximateDurationSeconds,
+    segments: audit.segments,
+    unverifiedPassageDistanceMeters: audit.unverifiedPassageDistanceMeters,
   };
 }

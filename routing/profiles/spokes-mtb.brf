@@ -53,7 +53,7 @@ assign considerTurnRestrictions     = true  # %considerTurnRestrictions% | Set t
 assign correctMisplacedViaPoints = false # %correctMisplacedViaPoints% | Set to true to remove detours due to via points (going back and forth on the same route) | boolean
 assign correctMisplacedViaPointsDistance = 400 # %correctMisplacedViaPointsDistance% | Only remove detours shorter than this (one-way) distance (in m) (engine defaults to 0 which removes detours whatever their length) | number
 
-assign processUnusedTags            = false # %processUnusedTags% | Set true to output unused tags in data tab | boolean
+assign processUnusedTags            = true  # Preserve every encoded source tag for Spokes segment auditing.
 
 ---context:way   # following code refers to way-tags
 
@@ -272,10 +272,10 @@ assign costfactor
   if ( and highway= not route=ferry ) then 10000
 
   #
-  # exclude motorways and proposed, abandoned under construction roads
+  # exclude motorways and ways that do not yet exist
   #
   else if ( highway=motorway|motorway_link          ) then   10000
-  else if ( highway=proposed|abandoned|construction ) then   10000
+  else if ( highway=proposed|abandoned              ) then   10000
 
   #
   # all other exclusions below (access, steps, ferries,..)

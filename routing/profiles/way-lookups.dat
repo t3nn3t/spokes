@@ -1,0 +1,19 @@
+
+# Spokes segment-audit attributes appended to BRouter lookup version 12.0.
+designation;0000000001 public_footpath
+designation;0000000001 public_bridleway
+designation;0000000001 restricted_byway
+designation;0000000001 byway_open_to_all_traffic
+access:conditional;0000000001 active_restriction no private no@(24/7) private@(24/7) no_@_(24/7) private_@_(24/7)
+foot:conditional;0000000001 active_restriction no private no@(24/7) private@(24/7) no_@_(24/7) private_@_(24/7)
+bicycle:conditional;0000000001 present
+locked;0000000001 yes no
+impassable;0000000001 yes no
+passable;0000000001 yes no
+closed;0000000001 yes no
+barrier;0000000001 gate
+barrier;0000000001 stile
+barrier;0000000001 block
+barrier;0000000001 fence
+barrier;0000000001 wall
+barrier;0000000001 no

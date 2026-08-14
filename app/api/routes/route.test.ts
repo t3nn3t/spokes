@@ -18,6 +18,38 @@ const controlledBrouterResponse = {
         name: "spokes-route-plan",
         "track-length": "9342",
         "total-time": "2803",
+        messages: [
+          [
+            "Longitude",
+            "Latitude",
+            "Elevation",
+            "Distance",
+            "CostPerKm",
+            "ElevCost",
+            "TurnCost",
+            "NodeCost",
+            "InitialCost",
+            "WayTags",
+            "NodeTags",
+            "Time",
+            "Energy",
+          ],
+          [
+            "-263446",
+            "51781007",
+            "75",
+            "9342",
+            "1000",
+            "0",
+            "0",
+            "0",
+            "0",
+            "highway=cycleway foot=designated bicycle=designated",
+            "",
+            "2803",
+            "280300",
+          ],
+        ],
       },
       geometry: {
         type: "LineString",
@@ -38,6 +70,24 @@ function routeRequest(body: unknown = fixedJourneyRequest) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+function controlledResponseWithTags(wayTags: string, nodeTags = "") {
+  const response = structuredClone(controlledBrouterResponse);
+  response.features[0].properties.messages[1][9] = wayTags;
+  response.features[0].properties.messages[1][10] = nodeTags;
+  return response;
+}
+
+function stubBrouterResponse(response: unknown = controlledBrouterResponse) {
+  const brouterFetch = vi.fn().mockResolvedValue(
+    new Response(JSON.stringify(response), {
+      status: 200,
+      headers: { "content-type": "application/vnd.geo+json" },
+    }),
+  );
+  vi.stubGlobal("fetch", brouterFetch);
+  return brouterFetch;
 }
 
 afterEach(() => {
@@ -64,16 +114,7 @@ describe("POST /api/routes", () => {
   });
 
   it("plans between two requested England points through BRouter", async () => {
-    const brouterFetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(controlledBrouterResponse), {
-        status: 200,
-        headers: { "content-type": "application/vnd.geo+json" },
-      }),
-    );
-    vi.stubGlobal(
-      "fetch",
-      brouterFetch,
-    );
+    const brouterFetch = stubBrouterResponse();
 
     const response = await POST(routeRequest());
 
@@ -117,8 +158,244 @@ describe("POST /api/routes", () => {
           },
           totalDistanceMeters: 9342,
           approximateDurationSeconds: 2803,
+          segments: [
+            {
+              classification: "eligible",
+              distanceMeters: 9342,
+              geometry: {
+                type: "LineString",
+                coordinates: [
+                  [-0.150633, 51.797717],
+                  [-0.1842, 51.7924],
+                  [-0.2281, 51.7863],
+                  [-0.263446, 51.781007],
+                ],
+              },
+            },
+          ],
+          unverifiedPassageDistanceMeters: 0,
         },
       ],
+    });
+  });
+
+  it("keeps a bicycle-only restriction as Unverified Passage and times it at 7 km/h", async () => {
+    const responseWithUnverifiedPassage = structuredClone(controlledBrouterResponse);
+    const header = responseWithUnverifiedPassage.features[0].properties.messages[0];
+    responseWithUnverifiedPassage.features[0].properties.messages = [
+      header,
+      [
+        "-184200",
+        "51792400",
+        "87",
+        "3000",
+        "1000",
+        "0",
+        "0",
+        "0",
+        "0",
+        "highway=cycleway foot=designated bicycle=designated",
+        "",
+        "900",
+        "90000",
+      ],
+      [
+        "-263446",
+        "51781007",
+        "75",
+        "6342",
+        "5000",
+        "0",
+        "0",
+        "0",
+        "0",
+        "highway=footway foot=yes bicycle=no",
+        "",
+        "2803",
+        "280300",
+      ],
+    ];
+    stubBrouterResponse(responseWithUnverifiedPassage);
+
+    const response = await POST(routeRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.routes[0]).toMatchObject({
+      approximateDurationSeconds: 4162,
+      unverifiedPassageDistanceMeters: 6342,
+      segments: [
+        {
+          classification: "eligible",
+          distanceMeters: 3000,
+          geometry: {
+            coordinates: [
+              [-0.150633, 51.797717],
+              [-0.1842, 51.7924],
+            ],
+          },
+        },
+        {
+          classification: "unverified-passage",
+          distanceMeters: 6342,
+          geometry: {
+            coordinates: [
+              [-0.1842, 51.7924],
+              [-0.2281, 51.7863],
+              [-0.263446, 51.781007],
+            ],
+          },
+        },
+      ],
+    });
+  });
+
+  it("returns no route for every high-confidence Explicit Exclusion", async () => {
+    const exclusions = [
+      { name: "general prohibition", wayTags: "highway=path access=no" },
+      { name: "foot prohibition", wayTags: "highway=path foot=no" },
+      { name: "private passage", wayTags: "highway=path access=private" },
+      { name: "active closure", wayTags: "highway=path closed=yes" },
+      {
+        name: "active conditional prohibition overriding a base grant",
+        wayTags: "highway=path access=yes access:conditional=active_restriction",
+      },
+      {
+        name: "private way with a permissive gate",
+        wayTags: "highway=path access=private",
+        nodeTags: "barrier=gate access=yes",
+      },
+      {
+        name: "locked critical barrier",
+        wayTags: "highway=path",
+        nodeTags: "barrier=gate locked=yes",
+      },
+      { name: "impassable way", wayTags: "highway=path smoothness=impassable" },
+      {
+        name: "impassable critical barrier",
+        wayTags: "highway=path",
+        nodeTags: "barrier=block passable=no",
+      },
+    ];
+
+    for (const exclusion of exclusions) {
+      stubBrouterResponse(
+        controlledResponseWithTags(exclusion.wayTags, exclusion.nodeTags),
+      );
+
+      const response = await POST(routeRequest());
+
+      expect(response.status, exclusion.name).toBe(404);
+      expect(await response.json()).toEqual({
+        error: {
+          code: "NO_ROUTE",
+          message: "No eligible route remains after applying passage exclusions.",
+        },
+      });
+    }
+  });
+
+  it("keeps ambiguous access data as Unverified Passage", async () => {
+    const unverifiedCases = [
+      {
+        name: "bicycle-only restriction",
+        wayTags: "highway=footway foot=yes bicycle=no",
+      },
+      {
+        name: "private bicycle restriction",
+        wayTags: "highway=footway foot=designated bicycle=private",
+      },
+      { name: "missing bicycle data", wayTags: "highway=footway foot=yes" },
+      {
+        name: "conflicting access data",
+        wayTags: "highway=path access=no foot=yes",
+      },
+      {
+        name: "indirect restriction",
+        wayTags: "highway=track foot=yes vehicle=no",
+      },
+      { name: "unknown access", wayTags: "highway=path access=unknown" },
+      {
+        name: "conditional access",
+        wayTags: "highway=path foot=yes bicycle=yes access:conditional=unknown",
+      },
+    ];
+
+    for (const unverifiedCase of unverifiedCases) {
+      stubBrouterResponse(controlledResponseWithTags(unverifiedCase.wayTags));
+
+      const response = await POST(routeRequest());
+      const body = await response.json();
+
+      expect(response.status, unverifiedCase.name).toBe(200);
+      expect(body.routes[0].segments).toEqual([
+        expect.objectContaining({
+          classification: "unverified-passage",
+          distanceMeters: 9342,
+        }),
+      ]);
+      expect(body.routes[0].unverifiedPassageDistanceMeters).toBe(9342);
+    }
+  });
+
+  it("keeps difficult passage and ordinary barriers Eligible", async () => {
+    const eligibleCases = [
+      { name: "bridleway", wayTags: "highway=bridleway foot=designated" },
+      {
+        name: "restricted byway",
+        wayTags: "highway=path designation=restricted_byway",
+      },
+      { name: "steps", wayTags: "highway=steps" },
+      {
+        name: "stile",
+        wayTags: "highway=path bicycle=yes",
+        nodeTags: "barrier=stile",
+      },
+      {
+        name: "ordinary gate",
+        wayTags: "highway=path bicycle=yes",
+        nodeTags: "barrier=gate",
+      },
+      {
+        name: "poor surface",
+        wayTags: "highway=track surface=mud smoothness=very_horrible",
+      },
+      {
+        name: "difficult gradient",
+        wayTags: "highway=track incline=30% mtb:scale=6",
+      },
+      {
+        name: "passable construction",
+        wayTags: "highway=construction access=yes foot=yes bicycle=yes",
+      },
+    ];
+
+    for (const eligibleCase of eligibleCases) {
+      stubBrouterResponse(
+        controlledResponseWithTags(eligibleCase.wayTags, eligibleCase.nodeTags),
+      );
+
+      const response = await POST(routeRequest());
+      const body = await response.json();
+
+      expect(response.status, eligibleCase.name).toBe(200);
+      expect(body.routes[0].segments[0].classification).toBe("eligible");
+    }
+  });
+
+  it("times explicit walk-bike passage at 7 km/h without marking it Unverified", async () => {
+    stubBrouterResponse(
+      controlledResponseWithTags("highway=path foot=yes bicycle=dismount"),
+    );
+
+    const response = await POST(routeRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.routes[0]).toMatchObject({
+      approximateDurationSeconds: 4804,
+      unverifiedPassageDistanceMeters: 0,
+      segments: [{ classification: "eligible", distanceMeters: 9342 }],
     });
   });
 
@@ -289,6 +566,8 @@ describe("POST /api/routes", () => {
       destination.latitude,
       75,
     ];
+    responseForRequestedPoints.features[0].properties.messages[1][0] = "-186474";
+    responseForRequestedPoints.features[0].properties.messages[1][1] = "51834048";
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -307,6 +586,7 @@ describe("POST /api/routes", () => {
     const snappedResponse = structuredClone(controlledBrouterResponse);
     snappedResponse.features[0].geometry.coordinates[0] = [-0.150633, 51.797917, 91];
     snappedResponse.features[0].geometry.coordinates[3] = [-0.263146, 51.781007, 75];
+    snappedResponse.features[0].properties.messages[1][0] = "-263146";
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response(JSON.stringify(snappedResponse), { status: 200 })),

@@ -1,0 +1,12 @@
+diff --git a/brouter-map-creator/src/main/java/btools/mapcreator/OsmCutter.java b/brouter-map-creator/src/main/java/btools/mapcreator/OsmCutter.java
+--- a/brouter-map-creator/src/main/java/btools/mapcreator/OsmCutter.java
++++ b/brouter-map-creator/src/main/java/btools/mapcreator/OsmCutter.java
+@@ -132,7 +132,7 @@ public class OsmCutter extends MapCreatorBase {
+     if (n.getTagsOrNull() != null) {
+       int[] lookupData = _expctxNode.createNewLookupData();
+       for (Map.Entry<String, String> e : n.getTagsOrNull().entrySet()) {
+-        _expctxNode.addLookupValue(e.getKey(), e.getValue(), lookupData);
++        _expctxNode.addLookupValue(e.getKey(), e.getValue().replace(' ', '_'), lookupData);
+         // _expctxNodeStat.addLookupValue( key, value, null );
+       }
+       n.description = _expctxNode.encode(lookupData);

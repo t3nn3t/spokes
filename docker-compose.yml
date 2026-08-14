@@ -17,6 +17,11 @@ services:
     ports:
       - "127.0.0.1:17777:17777"
     restart: unless-stopped
+    command: ["sh", "/spokes/start.sh"]
     volumes:
       - ${SPOKES_ROUTING_DATA_DIR:-./routing/data/segments4}:/segments4:ro
       - ./routing/profiles/spokes-mtb.brf:/profiles2/spokes-mtb.brf:ro
+      - ./routing/server/start.sh:/spokes/start.sh:ro
+      - ./routing/profiles/prepare-lookups.sh:/spokes/prepare-lookups.sh:ro
+      - ./routing/profiles/way-lookups.dat:/spokes/way-lookups.dat:ro
+      - ./routing/profiles/node-lookups.dat:/spokes/node-lookups.dat:ro

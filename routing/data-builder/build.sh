@@ -6,11 +6,18 @@ readonly source_file="/source/hertfordshire-260813.osm.pbf"
 readonly output_file="/segments4/W5_N50.rd5"
 readonly work_directory="/tmp/spokes-map"
 readonly java_memory="${BROUTER_MAP_MEMORY:-3G}"
+readonly lookup_file="/tmp/spokes-lookups.dat"
 
 if [[ ! -f "${source_file}" ]]; then
   echo "Missing ${source_file}; run npm run routing:data:source first." >&2
   exit 1
 fi
+
+/app/prepare-lookups.sh \
+  /app/profiles/lookups.dat \
+  "${lookup_file}" \
+  /app/way-lookups.dat \
+  /app/node-lookups.dat
 
 rm -rf "${work_directory}"
 mkdir -p \
@@ -32,7 +39,7 @@ java -Xmx"${java_memory}" -Xms512M -Xmn256M \
   -DuseDenseMaps=true \
   btools.util.StackSampler \
   btools.mapcreator.OsmFastCutter \
-  /app/profiles/lookups.dat \
+  "${lookup_file}" \
   nodetiles waytiles nodes55 waytiles55 \
   bordernids.dat relations.dat restrictions.dat \
   /app/profiles/all.brf \
@@ -57,7 +64,7 @@ java -Xmx"${java_memory}" -Xms512M -Xmn256M \
   btools.util.StackSampler \
   btools.mapcreator.WayLinker \
   unodes55 waytiles55 bordernodes.dat restrictions.dat \
-  /app/profiles/lookups.dat \
+  "${lookup_file}" \
   /app/profiles/all.brf \
   segments rd5
 

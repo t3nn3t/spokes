@@ -29,9 +29,12 @@ function clearRoute(map: MapLibreMap) {
 function renderRoute(map: MapLibreMap, response: RoutePlanningResponse) {
   const route = response.routes[0];
   const routeData = {
-    type: "Feature" as const,
-    properties: {},
-    geometry: route.geometry,
+    type: "FeatureCollection" as const,
+    features: route.segments.map((segment) => ({
+      type: "Feature" as const,
+      properties: { classification: segment.classification },
+      geometry: segment.geometry,
+    })),
   };
   const connectorData = {
     type: "FeatureCollection" as const,
@@ -82,7 +85,20 @@ function renderRoute(map: MapLibreMap, response: RoutePlanningResponse) {
       id: "route-plan-line",
       type: "line",
       source: "route-plan",
+      filter: ["==", ["get", "classification"], "eligible"],
       paint: { "line-color": "#1f6848", "line-width": 6 },
+    });
+    map.addLayer({
+      id: "route-plan-unverified",
+      type: "line",
+      source: "route-plan",
+      filter: ["==", ["get", "classification"], "unverified-passage"],
+      layout: { "line-cap": "round" },
+      paint: {
+        "line-color": "#b06f3c",
+        "line-width": 5,
+        "line-dasharray": [1.2, 1.2],
+      },
     });
   }
 

@@ -9,7 +9,7 @@
   "builder": {
     "brouterVersion": "1.7.10",
     "brouterCommit": "4d2639af77ea5ed9c30d3e400764eb6f9e8522da",
-    "spokesLookupVersion": "12.0"
+    "spokesLookupVersion": "12.1"
   },
   "output": "W5_N50.rd5"
 }

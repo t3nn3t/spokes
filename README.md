@@ -1,6 +1,6 @@
 # Spokes
 
-Spokes is an England-only route planner for a mountain-bike Rider who strongly prefers passage away from motor traffic. The current slice lets the Rider select exact start and destination points on a MapLibre map and request one provisional Strong Avoidance Route Plan through the Spokes Route Planning API and a separately running BRouter service. Every returned passage is independently audited: clear Explicit Exclusions remove the Route Plan, while ambiguous access remains visible as restrained Unverified Passage.
+Spokes is an England-only route planner for a mountain-bike Rider who strongly prefers passage away from motor traffic. The current slice lets the Rider select exact start and destination points on a MapLibre map and request one provisional Strong Avoidance Route Plan through the Spokes Route Planning API and a separately running BRouter service. Every returned passage is independently audited: clear Explicit Exclusions remove the Route Plan, ambiguous access remains visible as restrained Unverified Passage, expected Motor-Traffic Travel is measured independently of surface, and significant Motor-Road Crossings are counted separately.
 
 ## Run the tracer bullet
 
@@ -25,7 +25,7 @@ Start the web application in another:
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000), click a start and destination on the map, then choose **Plan route**. The requested markers stay canonical and visible while the returned route exposes its snapped endpoints, connector distances, audited segments, and total Unverified Passage. Only the Next.js server knows the BRouter address. `BROUTER_URL` defaults to `http://127.0.0.1:17777`; the public raster map source is independently configurable with `NEXT_PUBLIC_MAP_TILE_URL`. Both are documented in `.env.example`.
+Open [http://localhost:3000](http://localhost:3000), click a start and destination on the map, then choose **Plan route**. The requested markers stay canonical and visible while the returned route exposes its snapped endpoints, connector distances, audited exposure tiers, estimated Motor-Traffic Travel distance and percentage, estimated Motor-Road Crossing count, and total Unverified Passage. Only the Next.js server knows the BRouter address. `BROUTER_URL` defaults to `http://127.0.0.1:17777`; the public raster map source is independently configurable with `NEXT_PUBLIC_MAP_TILE_URL`. Both are documented in `.env.example`.
 
 ## Repeatable checks
 

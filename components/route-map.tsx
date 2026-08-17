@@ -32,7 +32,10 @@ function renderRoute(map: MapLibreMap, response: RoutePlanningResponse) {
     type: "FeatureCollection" as const,
     features: route.segments.map((segment) => ({
       type: "Feature" as const,
-      properties: { classification: segment.classification },
+      properties: {
+        classification: segment.classification,
+        motorExposureTier: segment.motorExposureTier,
+      },
       geometry: segment.geometry,
     })),
   };
@@ -82,11 +85,31 @@ function renderRoute(map: MapLibreMap, response: RoutePlanningResponse) {
       paint: { "line-color": "#fffdf8", "line-width": 11 },
     });
     map.addLayer({
-      id: "route-plan-line",
+      id: "route-plan-traffic-avoidant",
       type: "line",
       source: "route-plan",
-      filter: ["==", ["get", "classification"], "eligible"],
+      filter: ["==", ["get", "motorExposureTier"], "none"],
       paint: { "line-color": "#1f6848", "line-width": 6 },
+    });
+    map.addLayer({
+      id: "route-plan-motor-traffic",
+      type: "line",
+      source: "route-plan",
+      filter: ["!=", ["get", "motorExposureTier"], "none"],
+      paint: {
+        "line-color": [
+          "match",
+          ["get", "motorExposureTier"],
+          "rare",
+          "#d49a45",
+          "low",
+          "#cf7442",
+          "moderate",
+          "#b94936",
+          "#8e2928",
+        ],
+        "line-width": 6,
+      },
     });
     map.addLayer({
       id: "route-plan-unverified",

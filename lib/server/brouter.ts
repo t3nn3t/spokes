@@ -10,6 +10,7 @@ import {
   approximatePassageDurationSeconds,
   auditPassage,
 } from "@/lib/server/passage-audit";
+import { auditMotorTraffic } from "@/lib/server/motor-traffic-audit";
 
 const DEFAULT_BROUTER_URL = "http://127.0.0.1:17777";
 const BROUTER_PROFILE = "spokes-mtb";
@@ -118,6 +119,9 @@ function auditBrouterSegments(
 ): {
   segments: AuditedRouteSegment[];
   approximateDurationSeconds: number;
+  motorTrafficTravelDistanceMeters: number;
+  motorRoadCrossingCount: number;
+  motorRoadCrossingPenalty: number;
   unverifiedPassageDistanceMeters: number;
 } | null {
   if (!Array.isArray(messages) || messages.length < 2) return null;
@@ -145,10 +149,14 @@ function auditBrouterSegments(
   let geometryStartIndex = 0;
   let previousTime = 0;
   let auditedDuration = 0;
+  let motorTrafficDistance = 0;
+  let motorRoadCrossingCount = 0;
+  let motorRoadCrossingPenalty = 0;
   let unverifiedDistance = 0;
   let finalSegmentUsesWalkBike = false;
 
-  for (const row of messages.slice(1)) {
+  const rows = messages.slice(1);
+  for (const [rowIndex, row] of rows.entries()) {
     if (!Array.isArray(row)) return null;
     const longitude = asFiniteNumber(row[longitudeIndex]);
     const latitude = asFiniteNumber(row[latitudeIndex]);
@@ -156,6 +164,13 @@ function auditBrouterSegments(
     const cumulativeTime = asFiniteNumber(row[timeIndex]);
     const wayTags = parseTags(row[wayTagsIndex]);
     const nodeTags = parseTags(row[nodeTagsIndex]);
+    const nextRow = rows[rowIndex + 1];
+    const outgoingWayTags =
+      nextRow === undefined
+        ? null
+        : Array.isArray(nextRow)
+          ? parseTags(nextRow[wayTagsIndex])
+          : null;
     if (
       longitude === null ||
       latitude === null ||
@@ -164,7 +179,8 @@ function auditBrouterSegments(
       cumulativeTime === null ||
       cumulativeTime < previousTime ||
       !wayTags ||
-      !nodeTags
+      !nodeTags ||
+      (nextRow !== undefined && !outgoingWayTags)
     ) {
       return null;
     }
@@ -178,8 +194,15 @@ function auditBrouterSegments(
     if (geometryEndIndex < 0) return null;
 
     const { classification, usesWalkBike } = auditPassage(wayTags, nodeTags);
+    const { exposureTier, crossing, crossingPenalty } = auditMotorTraffic(
+      wayTags,
+      nodeTags,
+      outgoingWayTags,
+    );
     segments.push({
       classification,
+      motorExposureTier: exposureTier,
+      motorRoadCrossing: crossing,
       distanceMeters: distance,
       geometry: {
         type: "LineString",
@@ -189,6 +212,13 @@ function auditBrouterSegments(
     if (classification === "unverified-passage") {
       unverifiedDistance += distance;
     }
+    if (exposureTier !== "none") {
+      motorTrafficDistance += distance;
+    }
+    if (crossing !== "none" && crossing !== "grade-separated") {
+      motorRoadCrossingCount += 1;
+    }
+    motorRoadCrossingPenalty += crossingPenalty;
     auditedDuration += approximatePassageDurationSeconds(
       distance,
       cumulativeTime - previousTime,
@@ -205,6 +235,9 @@ function auditBrouterSegments(
   return {
     segments,
     approximateDurationSeconds: Math.round(auditedDuration),
+    motorTrafficTravelDistanceMeters: motorTrafficDistance,
+    motorRoadCrossingCount,
+    motorRoadCrossingPenalty,
     unverifiedPassageDistanceMeters: unverifiedDistance,
   };
 }
@@ -312,6 +345,11 @@ export async function requestProvisionalRoute(
     throw new EndpointSnapExceededError();
   }
 
+  const auditedDistanceMeters = audit.segments.reduce(
+    (total, segment) => total + segment.distanceMeters,
+    0,
+  );
+
   return {
     role: "provisional",
     requestedCoordinates: {
@@ -328,6 +366,12 @@ export async function requestProvisionalRoute(
     totalDistanceMeters: Number(feature.properties["track-length"]),
     approximateDurationSeconds: audit.approximateDurationSeconds,
     segments: audit.segments,
+    motorTrafficTravelDistanceMeters: audit.motorTrafficTravelDistanceMeters,
+    motorTrafficTravelPercentage: Number(
+      ((audit.motorTrafficTravelDistanceMeters / auditedDistanceMeters) * 100).toFixed(1),
+    ),
+    motorRoadCrossingCount: audit.motorRoadCrossingCount,
+    motorRoadCrossingPenalty: audit.motorRoadCrossingPenalty,
     unverifiedPassageDistanceMeters: audit.unverifiedPassageDistanceMeters,
   };
 }

@@ -35,8 +35,19 @@ export type PassageClassification =
   | "unverified-passage"
   | "explicit-exclusion";
 
+export type MotorExposureTier = "none" | "rare" | "low" | "moderate" | "high";
+
+export type MotorRoadCrossing =
+  | "none"
+  | "grade-separated"
+  | "controlled"
+  | "island"
+  | "uncontrolled-major";
+
 export type AuditedRouteSegment = {
   classification: PassageClassification;
+  motorExposureTier: MotorExposureTier;
+  motorRoadCrossing: MotorRoadCrossing;
   distanceMeters: number;
   geometry: LineString;
 };
@@ -54,6 +65,10 @@ export type ProvisionalRoute = {
   totalDistanceMeters: number;
   approximateDurationSeconds: number;
   segments: AuditedRouteSegment[];
+  motorTrafficTravelDistanceMeters: number;
+  motorTrafficTravelPercentage: number;
+  motorRoadCrossingCount: number;
+  motorRoadCrossingPenalty: number;
   unverifiedPassageDistanceMeters: number;
 };
 

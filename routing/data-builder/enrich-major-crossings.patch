@@ -1,0 +1,280 @@
+diff --git a/brouter-map-creator/src/main/java/btools/mapcreator/OsmNodeP.java b/brouter-map-creator/src/main/java/btools/mapcreator/OsmNodeP.java
+--- a/brouter-map-creator/src/main/java/btools/mapcreator/OsmNodeP.java
++++ b/brouter-map-creator/src/main/java/btools/mapcreator/OsmNodeP.java
+@@ -40,6 +40,8 @@
+ 
+   public byte bits = 0;
+ 
++  public byte[] spokesDescriptionBits;
++
+   // interface OsmPos
+   public int getILat() {
+     return ilat;
+@@ -86,7 +88,7 @@
+   }
+ 
+   public byte[] getNodeDecsription() {
+-    return null;
++    return spokesDescriptionBits;
+   }
+ 
+   public RestrictionData getFirstRestriction() {
+@@ -284,7 +286,7 @@
+   }
+ 
+   public boolean isTransferNode() {
+-    return (bits & BORDER_BIT) == 0 && (bits & MULTI_WAY_BIT) == 0 && _linkCnt() == 2;
++    return getNodeDecsription() == null && (bits & BORDER_BIT) == 0 && (bits & MULTI_WAY_BIT) == 0 && _linkCnt() == 2;
+   }
+ 
+   private int _linkCnt() {
+diff --git a/brouter-map-creator/src/main/java/btools/mapcreator/WayLinker.java b/brouter-map-creator/src/main/java/btools/mapcreator/WayLinker.java
+--- a/brouter-map-creator/src/main/java/btools/mapcreator/WayLinker.java
++++ b/brouter-map-creator/src/main/java/btools/mapcreator/WayLinker.java
+@@ -8,6 +8,7 @@
+ import java.io.File;
+ import java.io.FileInputStream;
+ import java.io.RandomAccessFile;
++import java.util.IdentityHashMap;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.TreeMap;
+@@ -16,6 +17,7 @@
+ import btools.codec.MicroCache;
+ import btools.codec.MicroCache2;
+ import btools.codec.StatCoderContext;
++import btools.expressions.BExpressionContextNode;
+ import btools.expressions.BExpressionContextWay;
+ import btools.expressions.BExpressionMetaData;
+ import btools.util.ByteArrayUnifier;
+@@ -53,6 +55,9 @@
+   private byte elevationType;
+ 
+   private BExpressionContextWay expctxWay;
++  private BExpressionContextNode expctxNode;
++  private static final int MAJOR_MOTOR_ROAD_BIT = 1;
++  private static final int CROSSING_PASSAGE_BIT = 2;
+ 
+   private ByteArrayUnifier abUnifier;
+ 
+@@ -161,6 +166,7 @@
+ 
+     // read lookup + profile for lookup-version + access-filter
+     expctxWay = new BExpressionContextWay(meta);
++    expctxNode = new BExpressionContextNode(meta);
+     meta.readMetaData(lookupFile);
+ 
+     lookupVersion = meta.lookupVersion;
+@@ -387,8 +393,98 @@
+     }
+   }
+ 
++  private Map<String, String> wayTags(byte[] description) {
++    List<String> values = expctxWay.getKeyValueList(false, description);
++    Map<String, String> tags = new TreeMap<>();
++    for (int index = 0; index + 1 < values.size(); index += 2) {
++      tags.put(values.get(index), values.get(index + 1));
++    }
++    return tags;
++  }
++
++  private boolean hasValue(Map<String, String> tags, String key, String... values) {
++    String candidate = tags.get(key);
++    if (candidate == null) return false;
++    for (String value : values) {
++      if (candidate.equals(value)) return true;
++    }
++    return false;
++  }
++
++  private String effectiveMotorAccess(Map<String, String> tags) {
++    if (tags.containsKey("motor_vehicle")) return tags.get("motor_vehicle");
++    if (tags.containsKey("vehicle")) return tags.get("vehicle");
++    return tags.get("access");
++  }
++
++  private boolean motorcarExplicitlyAllowed(Map<String, String> tags) {
++    return tags.containsKey("motorcar") && !hasValue(tags, "motorcar", "no", "private");
++  }
++
++  private boolean motorsProhibited(Map<String, String> tags) {
++    String access = effectiveMotorAccess(tags);
++    return !motorcarExplicitlyAllowed(tags) &&
++      access != null && (access.equals("no") || access.equals("private"));
++  }
++
++  private boolean isMajorMotorRoad(Map<String, String> tags) {
++    if (motorsProhibited(tags)) return false;
++    if (hasValue(tags, "motorroad", "yes")) return true;
++
++    return hasValue(tags, "highway",
++      "motorway", "motorway_link", "trunk", "trunk_link",
++      "primary", "primary_link", "secondary", "secondary_link");
++  }
++
++  private boolean isCrossingPassage(Map<String, String> tags) {
++    return tags.containsKey("highway") && !isMajorMotorRoad(tags);
++  }
++
++  private int crossingClass(byte[] description, Map<byte[], Integer> cache) {
++    Integer existing = cache.get(description);
++    if (existing != null) return existing;
++    Map<String, String> tags = wayTags(description);
++    int classification = (isMajorMotorRoad(tags) ? MAJOR_MOTOR_ROAD_BIT : 0)
++      | (isCrossingPassage(tags) ? CROSSING_PASSAGE_BIT : 0);
++    cache.put(description, classification);
++    return classification;
++  }
++
++  static boolean isMajorRoadCrossing(int majorMotorRoadLinkCount, int crossingPassageLinkCount) {
++    return majorMotorRoadLinkCount >= 2 && crossingPassageLinkCount >= 2;
++  }
++
++  private void enrichMajorRoadCrossings() {
++    Map<byte[], Integer> classificationCache = new IdentityHashMap<>();
++    for (OsmNodeP node : nodesList) {
++      if (node == null) continue;
++      int majorMotorRoadLinkCount = 0;
++      int crossingPassageLinkCount = 0;
++      for (OsmLinkP link = node.getFirstLink(); link != null; link = link.getNext(node)) {
++        if (link.descriptionBitmap == null) continue;
++        int classification = crossingClass(link.descriptionBitmap, classificationCache);
++        if ((classification & MAJOR_MOTOR_ROAD_BIT) != 0) majorMotorRoadLinkCount++;
++        if ((classification & CROSSING_PASSAGE_BIT) != 0) crossingPassageLinkCount++;
++      }
++      if (!isMajorRoadCrossing(majorMotorRoadLinkCount, crossingPassageLinkCount)) continue;
++
++      int[] lookupData = expctxNode.createNewLookupData();
++      byte[] description = node.getNodeDecsription();
++      if (description != null) expctxNode.decode(lookupData, false, description);
++      expctxNode.addLookupValue("spokes_crossing_road_class", "major", lookupData);
++      byte[] enrichedDescription = expctxNode.encode(lookupData);
++      if (node instanceof OsmNodePT) {
++        ((OsmNodePT) node).descriptionBits = enrichedDescription;
++      } else {
++        node.spokesDescriptionBits = enrichedDescription;
++      }
++    }
++  }
++
+   @Override
+   public void wayFileEnd(File wayfile) throws Exception {
++    enrichMajorRoadCrossings();
++
+     int ncaches = divisor * divisor;
+     int indexsize = ncaches * 4;
+ 
+diff --git a/brouter-map-creator/src/test/java/btools/mapcreator/WayLinkerCrossingTest.java b/brouter-map-creator/src/test/java/btools/mapcreator/WayLinkerCrossingTest.java
+new file mode 100644
+--- /dev/null
++++ b/brouter-map-creator/src/test/java/btools/mapcreator/WayLinkerCrossingTest.java
+@@ -0,0 +1,13 @@
++package btools.mapcreator;
++
++import org.junit.Assert;
++import org.junit.Test;
++
++public class WayLinkerCrossingTest {
++  @Test
++  public void requiresThroughLinksForBothRoadAndCrossingPassage() {
++    Assert.assertTrue(WayLinker.isMajorRoadCrossing(2, 2));
++    Assert.assertFalse(WayLinker.isMajorRoadCrossing(2, 1));
++    Assert.assertFalse(WayLinker.isMajorRoadCrossing(1, 2));
++  }
++}
+diff --git a/brouter-expressions/src/main/java/btools/expressions/BExpressionContextNode.java b/brouter-expressions/src/main/java/btools/expressions/BExpressionContextNode.java
+--- a/brouter-expressions/src/main/java/btools/expressions/BExpressionContextNode.java
++++ b/brouter-expressions/src/main/java/btools/expressions/BExpressionContextNode.java
+@@ -9,7 +9,7 @@
+ 
+ public final class BExpressionContextNode extends BExpressionContext {
+   private static String[] buildInVariables =
+-    {"initialcost"};
++    {"initialcost", "spokes_crossing_cost"};
+ 
+   protected String[] getBuildInVariableNames() {
+     return buildInVariables;
+@@ -19,6 +19,9 @@
+     return getBuildInVariable(0);
+   }
+ 
++  public float getSpokesCrossingCost() {
++    return getBuildInVariable(1);
++  }
+ 
+   public BExpressionContextNode(BExpressionMetaData meta) {
+     super("node", meta);
+diff --git a/brouter-core/src/main/java/btools/router/RoutingContext.java b/brouter-core/src/main/java/btools/router/RoutingContext.java
+--- a/brouter-core/src/main/java/btools/router/RoutingContext.java
++++ b/brouter-core/src/main/java/btools/router/RoutingContext.java
+@@ -120,6 +120,8 @@
+     footMode = 0.f != expctxGlobal.getVariableValue("validForFoot", 0.f);
+ 
+     consider_crossing = 0.f != expctxGlobal.getVariableValue("consider_crossing", 0.f);
++
++    spokesCrossingPriorityThreshold = (int) expctxGlobal.getVariableValue("spokes_crossing_priority_threshold", 0.f);
+ 
+     crossing_Prio_H = (int) expctxGlobal.getVariableValue("crossing_Prio_H", 0.f);
+     crossing_Prio_L = (int) expctxGlobal.getVariableValue("crossing_Prio_L", 0.f);
+@@ -262,6 +264,8 @@
+ 
+   // variables in the profile to activate "crossing costs" at nodes with "estimated_crossing_class" not null
+   public boolean consider_crossing = false; // consider crossing
++
++  public int spokesCrossingPriorityThreshold = 0;
+ 
+   public int crossing_Prio_H = 0; // min value to considered a HW as "highprio"
+   public int crossing_Prio_L = 0; // max value to considered a HW as "lowprio"
+diff --git a/brouter-core/src/main/java/btools/router/StdPath.java b/brouter-core/src/main/java/btools/router/StdPath.java
+--- a/brouter-core/src/main/java/btools/router/StdPath.java
++++ b/brouter-core/src/main/java/btools/router/StdPath.java
+@@ -6,6 +6,14 @@
+ package btools.router;
+ 
+ final class StdPath extends OsmPath {
++  static boolean isSpokesMotorRoadCrossing(
++    int incomingPriority, int outgoingPriority, int crossingPriorityThreshold
++  ) {
++    return crossingPriorityThreshold > 0 &&
++      incomingPriority > 0 && incomingPriority < crossingPriorityThreshold &&
++      outgoingPriority > 0 && outgoingPriority < crossingPriorityThreshold;
++  }
++
+   /**
+    * The elevation-hysteresis-buffer (0-10 m)
+    */
+@@ -91,6 +99,15 @@
+     int newPrio = (int) rc.expctxWay.getPriorityClassifier();
+     int oldPrio = lastpriorityclassifier;
+ 
++    if (
++      isSpokesMotorRoadCrossing(oldPrio, newPrio, rc.spokesCrossingPriorityThreshold) &&
++      sourceNode.nodeDescription != null
++    ) {
++      boolean nodeAccessGranted = rc.expctxWay.getNodeAccessGranted() != 0.;
++      rc.expctxNode.evaluate(nodeAccessGranted, sourceNode.nodeDescription);
++      turncost += (int) rc.expctxNode.getSpokesCrossingCost();
++    }
++
+     if (rc.bikeMode) {
+       //   If the turn is LEFT and coming from "primary|secondary" to a lower priority highway
+       //   AND estimated_crossing_class is defined on the node, than penalty!!!
+diff --git a/brouter-core/src/test/java/btools/router/StdPathSpokesCrossingTest.java b/brouter-core/src/test/java/btools/router/StdPathSpokesCrossingTest.java
+new file mode 100644
+--- /dev/null
++++ b/brouter-core/src/test/java/btools/router/StdPathSpokesCrossingTest.java
+@@ -0,0 +1,14 @@
++package btools.router;
++
++import org.junit.Assert;
++import org.junit.Test;
++
++public class StdPathSpokesCrossingTest {
++  @Test
++  public void requiresPassageOnBothSidesOfTheCrossingNode() {
++    Assert.assertTrue(StdPath.isSpokesMotorRoadCrossing(4, 6, 24));
++    Assert.assertFalse(StdPath.isSpokesMotorRoadCrossing(4, 26, 24));
++    Assert.assertFalse(StdPath.isSpokesMotorRoadCrossing(26, 4, 24));
++    Assert.assertFalse(StdPath.isSpokesMotorRoadCrossing(26, 26, 24));
++  }
++}

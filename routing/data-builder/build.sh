@@ -14,7 +14,7 @@ if [[ ! -f "${source_file}" ]]; then
 fi
 
 /app/prepare-lookups.sh \
-  /app/profiles/lookups.dat \
+  /profiles2/lookups.dat \
   "${lookup_file}" \
   /app/way-lookups.dat \
   /app/node-lookups.dat
@@ -42,9 +42,9 @@ java -Xmx"${java_memory}" -Xms512M -Xmn256M \
   "${lookup_file}" \
   nodetiles waytiles nodes55 waytiles55 \
   bordernids.dat relations.dat restrictions.dat \
-  /app/profiles/all.brf \
-  /app/profiles/trekking.brf \
-  /app/profiles/softaccess.brf \
+  /profiles2/all.brf \
+  /profiles2/trekking.brf \
+  /profiles2/softaccess.brf \
   "${source_file}"
 
 java -Xmx"${java_memory}" -Xms512M -Xmn256M \
@@ -65,7 +65,7 @@ java -Xmx"${java_memory}" -Xms512M -Xmn256M \
   btools.mapcreator.WayLinker \
   unodes55 waytiles55 bordernodes.dat restrictions.dat \
   "${lookup_file}" \
-  /app/profiles/all.brf \
+  /profiles2/all.brf \
   segments rd5
 
 if [[ ! -s "segments/W5_N50.rd5" ]]; then

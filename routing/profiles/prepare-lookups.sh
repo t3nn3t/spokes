@@ -25,7 +25,7 @@ awk -v way_additions="$way_additions" -v node_additions="$node_additions" '
   }
 
   $0 == "---lookupversion:11" { print "---lookupversion:12"; next }
-  $0 == "---minorversion:2" { print "---minorversion:0"; next }
+  $0 == "---minorversion:2" { print "---minorversion:1"; next }
 
   $0 == "access;0002688349 private restricted residents employees" {
     print "access;0002688349 private"
@@ -52,4 +52,4 @@ awk -v way_additions="$way_additions" -v node_additions="$node_additions" '
 ' "$source_lookup" > "$output_lookup"
 
 grep -q '^---lookupversion:12$' "$output_lookup"
-grep -q '^---minorversion:0$' "$output_lookup"
+grep -q '^---minorversion:1$' "$output_lookup"

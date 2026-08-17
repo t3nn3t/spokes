@@ -22,6 +22,7 @@ assign   consider_river           = false  # %consider_river% | Activate to pref
 assign   consider_forest          = false  # %consider_forest% | Activate to prefer a route in forest or parks | boolean
 assign   consider_town            = false  # %consider_town% | Activate to bypass cities / big towns as far as possible | boolean
 assign   consider_traffic         = true   # Include BRouter's static traffic estimate in this provisional cost model.
+assign   spokes_crossing_priority_threshold = 24   # Crossing cost applies only between lower-priority passage links.
 
 
 
@@ -264,6 +265,68 @@ assign town_penalty
 # the type of way the routing profile is searching for
 #
 assign isresidentialorliving = or highway=residential|living_street living_street=yes
+
+# Expected shared motor exposure is independent of surface. Keep every tier
+# finite so later tickets can still request alternatives through the same graph.
+assign motorcar_explicitly_allowed =
+  if motorcar= then false
+  else not motorcar=no|private
+
+assign motors_prohibited =
+  if motorcar_explicitly_allowed then false
+  else if not motor_vehicle= then motor_vehicle=no|private
+  else if not vehicle= then vehicle=no|private
+  else if not access= then access=no|private
+  else false
+
+assign motors_explicitly_allowed =
+  if motorcar_explicitly_allowed then true
+  else if not motor_vehicle= then not motor_vehicle=no|private
+  else if not vehicle= then not vehicle=no|private
+  else if not access= then not access=no|private
+  else false
+
+assign separated_cycleway =
+  if cycleway=track then true
+  else if cycleway:left=track|sidepath then true
+  else if cycleway:right=track|sidepath then true
+  else if cycleway:both=track|sidepath then true
+  else false
+
+assign traffic_avoidant =
+  if motors_prohibited then true
+  else if separated_cycleway then true
+  else if highway=bridleway|cycleway|footway|path|pedestrian|steps then not motors_explicitly_allowed
+  else false
+
+assign restricted_motor_access =
+  # BRouter lookups normalize customers/delivery to destination and forestry to agricultural.
+  if motorcar=destination|agricultural|permit then true
+  else if not motor_vehicle= then motor_vehicle=destination|agricultural|permit
+  else if not vehicle= then vehicle=destination|agricultural|permit
+  else if not access= then access=destination|agricultural|permit
+  else false
+
+assign high_speed = maxspeed=60|70|80|90|100|110|120|130|rural
+assign crossing_major_motor_road =
+  if highway=motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link then true
+  else if motorroad=yes then true
+  else false
+
+assign major_motor_road =
+  if crossing_major_motor_road then true
+  else if estimated_traffic_class=5|6|7 then true
+  else high_speed
+
+assign motor_exposure_penalty =
+  if traffic_avoidant then 0
+  else if major_motor_road then 100
+  else if and highway=service restricted_motor_access then 3
+  else if highway=service|track then 10
+  else if designation=byway_open_to_all_traffic then 10
+  else if or designation=quiet_lane quiet_lane=yes then 10
+  else 25
+
 assign costfactor
 
   #
@@ -289,6 +352,7 @@ assign costfactor
   add no_river_penalty
   add noise_penalty
   add traffic_penalty
+  add motor_exposure_penalty
 
   #
   # apply oneway-and access-penalties
@@ -310,45 +374,20 @@ assign costfactor
   else
   add ( if stick_to_cycleroutes then 0.5 else 0.05 )  # everything else somewhat up
 
-  #
-  # some other highway types
-  #
-  if      ( highway=pedestrian                ) then ( if isbike then 1.1 else 1.6 )
-  else if ( highway=bridleway                 ) then 1
-  else if ( highway=cycleway                  ) then 1
-  else if ( isresidentialorliving             ) then 6
-  else if ( highway=service                   ) then 2
-
-  #
-  # Difficult terrain remains eligible and carries no independent avoidance penalty.
-  #
-  else if ( highway=track|road|path|footway ) then 1.1
-
-  #
-  # When avoiding unsafe ways, avoid highways without a bike hint
-  #
-  else add ( if ( and avoid_unsafe not isbike ) then 2 else 0 )
-
-  #
-  # actuals roads are o.k. if we have a bike hint
-  #
-       if ( highway=trunk|trunk_link         ) then ( if isbike then 12 else 100 )
-  else if ( highway=primary|primary_link     ) then ( if isbike then 10 else  50 )
-  else if ( highway=secondary|secondary_link ) then ( if isbike then  8 else  25 )
-  else if ( highway=tertiary|tertiary_link   ) then ( if isbike then  6 else  12 )
-  else if ( highway=unclassified             ) then ( if isbike then  4 else   7 )
-
-  #
-  # default for any other highway type not handled above
-  #
-  else 2.0
+  # Keep terrain and nominal road class out of the residual cost. Expected
+  # exposure above is the deliberate routing objective; every eligible tier
+  # stays finite so candidate generation can still recover connected routes.
+  if traffic_avoidant then 1
+  else if highway=service|track then 1.2
+  else 1.5
 
 
 # way priorities used for voice hint generation
 
 assign priorityclassifier =
 
-  if      ( highway=motorway                          ) then  30
+  if      ( crossing_major_motor_road                 ) then  26
+  else if ( highway=motorway                          ) then  30
   else if ( highway=motorway_link                     ) then  29
   else if ( highway=trunk                             ) then  28
   else if ( highway=trunk_link                        ) then  27
@@ -413,8 +452,16 @@ assign footaccess =
        else if foot= then defaultaccess
        else not foot=private|no
 
+assign spokes_crossing_cost =
+       if spokes_crossing_road_class=major then
+       (
+         if or highway=traffic_signals crossing=traffic_signals|pedestrian_signals|zebra|marked then 80
+         else if crossing=island then 180
+         else 600
+       )
+       else if or highway=traffic_signals and highway=crossing crossing=traffic_signals then 20
+       else 0
+
 assign initialcost =
-       if or highway=traffic_signals and highway=crossing crossing=traffic_signals then 20
-       else
        if bikeaccess then 0
        else ( if footaccess then 100 else 1000000 )

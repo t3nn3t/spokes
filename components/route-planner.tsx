@@ -132,6 +132,13 @@ export function RoutePlanner() {
           response={state.status === "ready" ? state.response : null}
           onSelect={selectEndpoint}
         />
+        {route && (
+          <div className="map-legend" aria-label="Route passage legend">
+            <span><i className="passage-swatch traffic-avoidant-swatch" />Traffic-Avoidant Passage</span>
+            <span><i className="passage-swatch motor-traffic-swatch" />Motor-Traffic Travel</span>
+            <span><i className="passage-swatch unverified-swatch" />Unverified Passage</span>
+          </div>
+        )}
       </div>
 
       <aside className="planning-panel">
@@ -182,6 +189,16 @@ export function RoutePlanner() {
               <dl className="route-details">
                 <div><dt>Start connector</dt><dd>{formatDistance(route.connectorDistanceMeters.start)}</dd></div>
                 <div><dt>Destination connector</dt><dd>{formatDistance(route.connectorDistanceMeters.destination)}</dd></div>
+                <div>
+                  <dt><span className="passage-swatch motor-traffic-swatch" />Estimated Motor-Traffic Travel</dt>
+                  <dd>
+                    {formatDistance(route.motorTrafficTravelDistanceMeters)} · {route.motorTrafficTravelPercentage}%
+                  </dd>
+                </div>
+                <div>
+                  <dt>Estimated Motor-Road Crossings</dt>
+                  <dd>{route.motorRoadCrossingCount}</dd>
+                </div>
                 <div>
                   <dt><span className="passage-swatch unverified-swatch" />Unverified Passage</dt>
                   <dd>{formatDistance(route.unverifiedPassageDistanceMeters)}</dd>

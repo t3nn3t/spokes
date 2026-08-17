@@ -1,9 +1,12 @@
 
-# Spokes segment-audit attributes appended to BRouter lookup version 12.0.
+# Spokes segment-audit attributes appended to BRouter lookup version 12.1.
 designation;0000000001 public_footpath
 designation;0000000001 public_bridleway
 designation;0000000001 restricted_byway
 designation;0000000001 byway_open_to_all_traffic
+designation;0000000001 quiet_lane
+quiet_lane;0000000001 yes
+cycleway:both;0000000001 sidepath
 access:conditional;0000000001 active_restriction no private no@(24/7) private@(24/7) no_@_(24/7) private_@_(24/7)
 foot:conditional;0000000001 active_restriction no private no@(24/7) private@(24/7) no_@_(24/7) private_@_(24/7)
 bicycle:conditional;0000000001 present

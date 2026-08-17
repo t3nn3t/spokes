@@ -44,7 +44,7 @@ const controlledBrouterResponse = {
             "0",
             "0",
             "0",
-            "highway=cycleway foot=designated bicycle=designated",
+            "highway=cycleway surface=paved foot=designated bicycle=designated",
             "",
             "2803",
             "280300",
@@ -76,6 +76,49 @@ function controlledResponseWithTags(wayTags: string, nodeTags = "") {
   const response = structuredClone(controlledBrouterResponse);
   response.features[0].properties.messages[1][9] = wayTags;
   response.features[0].properties.messages[1][10] = nodeTags;
+  return response;
+}
+
+function controlledCrossingResponse(
+  incomingWayTags: string,
+  nodeTags: string,
+  outgoingWayTags = "highway=cycleway",
+) {
+  const response = structuredClone(controlledBrouterResponse);
+  const header = response.features[0].properties.messages[0];
+  response.features[0].properties.messages = [
+    header,
+    [
+      "-184200",
+      "51792400",
+      "87",
+      "3000",
+      "1000",
+      "0",
+      "0",
+      "0",
+      "0",
+      incomingWayTags,
+      nodeTags,
+      "900",
+      "90000",
+    ],
+    [
+      "-263446",
+      "51781007",
+      "75",
+      "6342",
+      "1000",
+      "0",
+      "0",
+      "0",
+      "0",
+      outgoingWayTags,
+      "",
+      "2803",
+      "280300",
+    ],
+  ];
   return response;
 }
 
@@ -161,6 +204,8 @@ describe("POST /api/routes", () => {
           segments: [
             {
               classification: "eligible",
+              motorExposureTier: "none",
+              motorRoadCrossing: "none",
               distanceMeters: 9342,
               geometry: {
                 type: "LineString",
@@ -173,10 +218,315 @@ describe("POST /api/routes", () => {
               },
             },
           ],
+          motorTrafficTravelDistanceMeters: 0,
+          motorTrafficTravelPercentage: 0,
+          motorRoadCrossingCount: 0,
+          motorRoadCrossingPenalty: 0,
           unverifiedPassageDistanceMeters: 0,
         },
       ],
     });
+  });
+
+  it.each([
+    {
+      name: "paved segregated cycleway",
+      wayTags: "highway=cycleway surface=paved foot=designated bicycle=designated",
+      tier: "none",
+      distance: 0,
+      percentage: 0,
+    },
+    {
+      name: "residential way with segregated cycle tracks on both sides",
+      wayTags: "highway=residential surface=asphalt cycleway:both=track motor_vehicle=yes",
+      tier: "none",
+      distance: 0,
+      percentage: 0,
+    },
+    {
+      name: "bridleway without ordinary motor access",
+      wayTags: "highway=bridleway surface=unpaved foot=designated bicycle=yes",
+      tier: "none",
+      distance: 0,
+      percentage: 0,
+    },
+    {
+      name: "restricted byway without ordinary motor access",
+      wayTags: "highway=track designation=restricted_byway motor_vehicle=no surface=unpaved",
+      tier: "none",
+      distance: 0,
+      percentage: 0,
+    },
+    {
+      name: "restricted service access",
+      wayTags: "highway=service surface=asphalt motor_vehicle=destination",
+      tier: "rare",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "specific restricted motor access overriding a general restriction",
+      wayTags:
+        "highway=service surface=asphalt access=no foot=yes motor_vehicle=destination",
+      tier: "rare",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "restricted farm service access",
+      wayTags: "highway=service surface=unpaved motor_vehicle=agricultural",
+      tier: "rare",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "restricted forestry service access",
+      wayTags: "highway=service surface=unpaved access=forestry",
+      tier: "rare",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "unpaved BOAT",
+      wayTags:
+        "highway=track surface=unpaved designation=byway_open_to_all_traffic motor_vehicle=yes",
+      tier: "low",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "motor-access track",
+      wayTags: "highway=track surface=unpaved motor_vehicle=permissive",
+      tier: "low",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "ordinary shared road",
+      wayTags: "highway=residential surface=unpaved motor_vehicle=yes maxspeed=30",
+      tier: "moderate",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "quiet lane",
+      wayTags:
+        "highway=unclassified designation=quiet_lane surface=asphalt motor_vehicle=yes maxspeed=30",
+      tier: "low",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "ordinary unclassified road",
+      wayTags: "highway=unclassified surface=asphalt motor_vehicle=yes maxspeed=30",
+      tier: "moderate",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "paved major high-speed road",
+      wayTags: "highway=primary surface=asphalt motor_vehicle=yes maxspeed=80",
+      tier: "high",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "unpaved major road",
+      wayTags: "highway=secondary surface=unpaved motor_vehicle=yes maxspeed=40",
+      tier: "high",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "high-speed local road",
+      wayTags: "highway=residential surface=asphalt motor_vehicle=yes maxspeed=80",
+      tier: "high",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "locally high traffic estimate",
+      wayTags:
+        "highway=residential surface=asphalt motor_vehicle=yes maxspeed=30 estimated_traffic_class=6",
+      tier: "high",
+      distance: 9342,
+      percentage: 100,
+    },
+    {
+      name: "major road closed to motor traffic",
+      wayTags: "highway=secondary surface=asphalt motor_vehicle=no bicycle=designated",
+      tier: "none",
+      distance: 0,
+      percentage: 0,
+    },
+  ])("audits $name independently of surface", async ({ wayTags, tier, distance, percentage }) => {
+    stubBrouterResponse(controlledResponseWithTags(wayTags));
+
+    const response = await POST(routeRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.routes[0]).toMatchObject({
+      motorTrafficTravelDistanceMeters: distance,
+      motorTrafficTravelPercentage: percentage,
+      segments: [{ motorExposureTier: tier }],
+    });
+  });
+
+  it("calculates Motor-Traffic Travel distance and percentage from audited segment geometry", async () => {
+    const mixedExposureResponse = structuredClone(controlledBrouterResponse);
+    const header = mixedExposureResponse.features[0].properties.messages[0];
+    mixedExposureResponse.features[0].properties.messages = [
+      header,
+      [
+        "-184200",
+        "51792400",
+        "87",
+        "3000",
+        "1000",
+        "0",
+        "0",
+        "0",
+        "0",
+        "highway=cycleway surface=asphalt bicycle=designated",
+        "",
+        "900",
+        "90000",
+      ],
+      [
+        "-263446",
+        "51781007",
+        "75",
+        "6342",
+        "5000",
+        "0",
+        "0",
+        "0",
+        "0",
+        "highway=residential surface=unpaved motor_vehicle=yes maxspeed=30",
+        "",
+        "2803",
+        "280300",
+      ],
+    ];
+    stubBrouterResponse(mixedExposureResponse);
+
+    const response = await POST(routeRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.routes[0]).toMatchObject({
+      motorTrafficTravelDistanceMeters: 6342,
+      motorTrafficTravelPercentage: 67.9,
+      segments: [
+        { motorExposureTier: "none", distanceMeters: 3000 },
+        { motorExposureTier: "moderate", distanceMeters: 6342 },
+      ],
+    });
+  });
+
+  it.each([
+    {
+      name: "bridge",
+      wayTags: "highway=cycleway bridge=yes",
+      nodeTags: "spokes_crossing_road_class=major highway=crossing crossing=uncontrolled",
+      crossing: "grade-separated",
+      count: 0,
+      penalty: 0,
+    },
+    {
+      name: "tunnel",
+      wayTags: "highway=cycleway tunnel=yes",
+      nodeTags: "spokes_crossing_road_class=major highway=crossing crossing=uncontrolled",
+      crossing: "grade-separated",
+      count: 0,
+      penalty: 0,
+    },
+    {
+      name: "signal-controlled major-road crossing",
+      wayTags: "highway=cycleway",
+      nodeTags: "spokes_crossing_road_class=major highway=crossing crossing=traffic_signals",
+      crossing: "controlled",
+      count: 1,
+      penalty: 1,
+    },
+    {
+      name: "major-road crossing with an island",
+      wayTags: "highway=cycleway",
+      nodeTags: "spokes_crossing_road_class=major highway=crossing crossing=island",
+      crossing: "island",
+      count: 1,
+      penalty: 2,
+    },
+    {
+      name: "uncontrolled major-road crossing",
+      wayTags: "highway=cycleway",
+      nodeTags: "spokes_crossing_road_class=major highway=crossing crossing=uncontrolled",
+      crossing: "uncontrolled-major",
+      count: 1,
+      penalty: 4,
+    },
+    {
+      name: "ordinary at-grade crossing",
+      wayTags: "highway=cycleway",
+      nodeTags: "highway=crossing crossing=uncontrolled",
+      crossing: "none",
+      count: 0,
+      penalty: 0,
+    },
+    {
+      name: "motor-access track crossing a major road",
+      wayTags: "highway=track surface=unpaved motor_vehicle=permissive",
+      nodeTags: "spokes_crossing_road_class=major highway=crossing crossing=uncontrolled",
+      crossing: "uncontrolled-major",
+      count: 1,
+      penalty: 4,
+      motorTrafficDistance: 3000,
+    },
+    {
+      name: "turn off the major road at a potential crossing node",
+      wayTags: "highway=primary surface=asphalt motor_vehicle=yes",
+      nodeTags: "spokes_crossing_road_class=major highway=crossing crossing=uncontrolled",
+      crossing: "none",
+      count: 0,
+      penalty: 0,
+      motorTrafficDistance: 3000,
+    },
+    {
+      name: "turn onto the major road at a potential crossing node",
+      wayTags: "highway=cycleway",
+      outgoingWayTags: "highway=primary surface=asphalt motor_vehicle=yes",
+      nodeTags: "spokes_crossing_road_class=major highway=crossing crossing=uncontrolled",
+      crossing: "none",
+      count: 0,
+      penalty: 0,
+      motorTrafficDistance: 6342,
+    },
+  ])("audits $name separately from Motor-Traffic Travel", async ({
+    wayTags,
+    nodeTags,
+    outgoingWayTags,
+    crossing,
+    count,
+    penalty,
+    motorTrafficDistance = 0,
+  }) => {
+    stubBrouterResponse(controlledCrossingResponse(wayTags, nodeTags, outgoingWayTags));
+
+    const response = await POST(routeRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.routes[0]).toMatchObject({
+      motorTrafficTravelDistanceMeters: motorTrafficDistance,
+      motorRoadCrossingCount: count,
+      motorRoadCrossingPenalty: penalty,
+    });
+    expect(body.routes[0].segments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ motorRoadCrossing: crossing }),
+      ]),
+    );
   });
 
   it("keeps a bicycle-only restriction as Unverified Passage and times it at 7 km/h", async () => {
